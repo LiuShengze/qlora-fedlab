@@ -1,0 +1,25 @@
+# 虚拟环境与巨型产物
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# 训练产物
+qlora-demo-output/
+qlora-demo-adapter/
+qlora-demo-adapter*/
+results/_run/
+*.bin
+
+# 模型与数据缓存（体积太大，不入库）
+hf-cache/
+models/
+data/raw/
+*.safetensors
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

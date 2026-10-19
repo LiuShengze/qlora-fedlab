@@ -1,0 +1,11 @@
+# QLoRA demo 依赖（2026-10 实测对齐版本，配合 demo_qlora.py）
+# torch 单独装（CUDA 版，见 setup_qlora.ps1），不写在这里，避免从 PyPI 装成 CPU 版
+transformers==5.20.1
+peft==0.21.2
+trl==1.16.0
+datasets==5.1.0
+accelerate==1.15.0
+bitsandbytes==0.50.2
+sentencepiece==0.2.2
+protobuf>=5.29
+tensorboard>=2.16
