@@ -8,7 +8,7 @@ __pycache__/
 # 训练产物
 qlora-demo-output/
 qlora-demo-adapter/
-qlora-demo-adapter*/
+qlora-*-adapter/
 results/_run/
 *.bin
 

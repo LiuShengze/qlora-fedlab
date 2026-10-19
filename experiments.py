@@ -1,16 +1,18 @@
-"""Day 3 对照实验：一次跑完 5 组配置，自动生成 results/ 下的表格与 loss 曲线。
+"""Day 3 对照实验：同一套配置换模型跑，自动生成跨规模对比表与 loss 曲线。
 
-每组只改一个变量，其余固定：0.6B 底座 + 4-bit NF4 + LoRA(q/k/v/o) + 1 epoch + seq 512。
+    python experiments.py                                   # 0.6B，5 组，约 6 分钟
+    python experiments.py --model D:\\...\\Qwen3-4B-Instruct-2507 `
+                          --batch-size 1 --accum 8          # 4B，显存不够放大 batch 时保持等效 batch 8
 
-    python experiments.py
-
-产物：
-    results/results.csv      原始数据
-    results/results.md       Markdown 表格（直接贴进 README）
-    results/loss_curve.png   loss 曲线对比图
+产物（results/ 下）：
+    results.csv     所有模型的所有实验，带 model 列，可反复追加
+    results.md      Markdown 表格（直接贴进 README）
+    curves.json     每个实验的 loss 曲线（画图用，跨次运行累积）
+    loss_curve.png  每个模型一个子图的 loss 对比图
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import time
@@ -41,6 +43,9 @@ CONFIGS = [
     ("D: lr=2e-5", dict(BASE, lr=2e-5)),
 ]
 
+FIELDS = ["model", "experiment", "r", "alpha", "lr", "samples",
+          "trainable_pct", "minutes", "peak_gb", "final_loss"]
+
 
 def build_dataset(limit: int):
     raw = load_dataset("yahma/alpaca-cleaned", split=f"train[:{limit}]")
@@ -56,7 +61,8 @@ def build_dataset(limit: int):
     )
 
 
-def run_one(name: str, cfg: dict, model_path: str) -> dict:
+def run_one(model_label: str, name: str, cfg: dict, model_path: str,
+            batch_size: int, accum: int) -> dict:
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
     torch.manual_seed(42)
@@ -76,8 +82,7 @@ def run_one(name: str, cfg: dict, model_path: str) -> dict:
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora)
-    # 注意：4-bit 权重在显存里是"打包"存储的，直接 sum(p.numel()) 会低估分母，
-    # 必须用 peft 自己的统计（它按逻辑参数量计算，与 print_trainable_parameters 一致）。
+    # 4-bit 权重在显存里是打包存储的，sum(p.numel()) 会低估分母，必须用 peft 的口径
     trainable, total = model.get_nb_trainable_parameters()
 
     dataset = build_dataset(cfg["samples"])
@@ -85,8 +90,8 @@ def run_one(name: str, cfg: dict, model_path: str) -> dict:
         output_dir=str(OUT / "_run"),
         max_length=512,
         dataset_text_field="text",
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=batch_size,
+        gradient_accumulation_steps=accum,
         learning_rate=cfg["lr"],
         num_train_epochs=1,
         logging_steps=5,
@@ -102,84 +107,122 @@ def run_one(name: str, cfg: dict, model_path: str) -> dict:
     started = time.time()
     result = trainer.train()
     elapsed = time.time() - started
+    metrics = trainer.state.log_history
     peak = torch.cuda.max_memory_allocated() / 1024**3
-
-    curve = [
-        (entry["step"], entry["loss"])
-        for entry in trainer.state.log_history
-        if "loss" in entry and "step" in entry
-    ]
+    curve = [(e["step"], e["loss"]) for e in metrics if "loss" in e and "step" in e]
 
     del trainer, model
     torch.cuda.empty_cache()
 
     return {
-        "name": name,
+        "model": model_label,
+        "experiment": name,
         "r": cfg["r"],
         "alpha": cfg["alpha"],
-        "lr": cfg["lr"],
+        "lr": f"{cfg['lr']:g}",
         "samples": cfg["samples"],
-        "trainable_pct": 100 * trainable / total,
-        "minutes": elapsed / 60,
-        "peak_gb": peak,
-        "final_loss": float(result.training_loss),
+        "trainable_pct": round(100 * trainable / total, 3),
+        "minutes": round(elapsed / 60, 2),
+        "peak_gb": round(peak, 2),
+        "final_loss": round(float(result.training_loss), 4),
         "curve": curve,
     }
 
 
-def main() -> int:
-    model_path = _default_model()
-    print(f"底座: {model_path}\n", flush=True)
-    rows = []
-    for name, cfg in CONFIGS:
-        print(f"=== {name} ===", flush=True)
-        row = run_one(name, cfg, model_path)
-        rows.append(row)
-        print(
-            f"  可训练 {row['trainable_pct']:.3f}% | {row['minutes']:.2f} min | "
-            f"峰值 {row['peak_gb']:.2f} GB | loss {row['final_loss']:.4f}",
-            flush=True,
-        )
+def load_csv() -> list[dict]:
+    path = OUT / "results.csv"
+    if not path.exists():
+        return []
+    with open(path, encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    # 兼容旧格式（没有 model 列时，默认是 0.6B 那一轮的结果）
+    for row in rows:
+        row.setdefault("model", "Qwen3-0.6B")
+        if not row["model"]:
+            row["model"] = "Qwen3-0.6B"
+    return rows
 
-    # ---- CSV ----
+
+def write_outputs(rows: list[dict], curves: dict) -> None:
     with open(OUT / "results.csv", "w", newline="", encoding="utf-8") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(["experiment", "r", "alpha", "lr", "samples", "trainable_pct", "minutes", "peak_gb", "final_loss"])
-        for r in rows:
-            writer.writerow([r["name"], r["r"], r["alpha"], r["lr"], r["samples"],
-                             f"{r['trainable_pct']:.3f}", f"{r['minutes']:.2f}",
-                             f"{r['peak_gb']:.2f}", f"{r['final_loss']:.4f}"])
+        writer = csv.DictWriter(fh, fieldnames=FIELDS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row[k] for k in FIELDS})
 
-    # ---- Markdown ----
-    lines = [
-        "| 实验 | r | alpha | lr | 样本 | 可训练参数 | 训练耗时 | 峰值显存 | 最终 loss |",
-        "|---|---|---|---|---|---|---|---|---|",
-    ]
-    for r in rows:
+    lines = ["| 模型 | 实验 | r | alpha | lr | 样本 | 可训练参数 | 训练耗时 | 峰值显存 | 最终 loss |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
+    for row in rows:
         lines.append(
-            f"| {r['name']} | {r['r']} | {r['alpha']} | {r['lr']:g} | {r['samples']} | "
-            f"{r['trainable_pct']:.3f}% | {r['minutes']:.2f} min | {r['peak_gb']:.2f} GB | {r['final_loss']:.4f} |"
+            f"| {row['model']} | {row['experiment']} | {row['r']} | {row['alpha']} | {row['lr']} | "
+            f"{row['samples']} | {row['trainable_pct']}% | {row['minutes']} min | "
+            f"{row['peak_gb']} GB | {row['final_loss']} |"
         )
     (OUT / "results.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    # ---- 曲线 ----
-    plt.figure(figsize=(8, 5))
-    for r in rows:
-        if r["curve"]:
-            steps, losses = zip(*r["curve"])
-            plt.plot(steps, losses, marker="o", markersize=3, linewidth=1.5, label=r["name"])
-    plt.xlabel("training step")
-    plt.ylabel("training loss")
-    plt.title("QLoRA on Qwen3-0.6B (4-bit NF4): controlled experiments, alpaca, 1 epoch")
-    plt.grid(alpha=0.3)
-    plt.legend(fontsize=7, loc="upper right")
-    plt.tight_layout()
-    plt.savefig(OUT / "loss_curve.png", dpi=150)
-    (OUT / "curves.json").write_text(
-        json.dumps({r["name"]: r["curve"] for r in rows}, ensure_ascii=False), encoding="utf-8"
-    )
-    print(f"\n已写出: {OUT/'results.csv'}, {OUT/'results.md'}, {OUT/'loss_curve.png'}", flush=True)
-    (OUT / "_run").exists() and None
+    (OUT / "curves.json").write_text(json.dumps(curves, ensure_ascii=False), encoding="utf-8")
+
+    models = sorted({row["model"] for row in rows})
+    fig, axes = plt.subplots(len(models), 1, figsize=(9, 4 * len(models)), squeeze=False)
+    for ax, model_label in zip(axes[:, 0], models):
+        for row in rows:
+            if row["model"] != model_label:
+                continue
+            key = f"{row['model']}|{row['experiment']}"
+            if key in curves and curves[key]:
+                steps, losses = zip(*curves[key])
+                ax.plot(steps, losses, marker="o", markersize=3, linewidth=1.5, label=row["experiment"])
+        ax.set_title(f"{model_label} — QLoRA 4-bit, alpaca, 1 epoch", fontsize=10)
+        ax.set_xlabel("training step")
+        ax.set_ylabel("training loss")
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=7, loc="upper right")
+    fig.suptitle("QLoRA controlled experiments across model scales")
+    fig.tight_layout()
+    fig.savefig(OUT / "loss_curve.png", dpi=150)
+    plt.close(fig)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default=_default_model(), help="本地目录或 HuggingFace 仓库名")
+    parser.add_argument("--name", default=None, help="结果表里显示的模型名，默认取目录名")
+    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--accum", type=int, default=4)
+    parser.add_argument("--only", default=None, help="只跑名字里含该子串的实验")
+    args = parser.parse_args()
+
+    model_label = args.name or Path(args.model).name
+    configs = [c for c in CONFIGS if args.only is None or args.only in c[0]]
+    print(f"模型: {model_label}\nbatch={args.batch_size} accum={args.accum} "
+          f"等效 batch={args.batch_size * args.accum}\n", flush=True)
+
+    new_rows = []
+    for name, cfg in configs:
+        print(f"=== {name} ===", flush=True)
+        row = run_one(model_label, name, cfg, args.model, args.batch_size, args.accum)
+        new_rows.append(row)
+        print(
+            f"  可训练 {row['trainable_pct']}% | {row['minutes']} min | "
+            f"峰值 {row['peak_gb']} GB | loss {row['final_loss']}",
+            flush=True,
+        )
+
+    old_rows = [r for r in load_csv() if r["model"] != model_label]
+    all_rows = old_rows + [{k: str(v) for k, v in row.items() if k != "curve"} for row in new_rows]
+
+    curves_path = OUT / "curves.json"
+    curves = json.loads(curves_path.read_text(encoding="utf-8")) if curves_path.exists() else {}
+    # 兼容旧格式：旧 key 没有 "模型|" 前缀，视为 0.6B
+    curves = {(k if "|" in k else f"Qwen3-0.6B|{k}"): v for k, v in curves.items()}
+    for row in new_rows:
+        curves[f"{row['model']}|{row['experiment']}"] = row["curve"]
+    for key in list(curves):
+        if key.startswith(f"{model_label}|") and key.split("|", 1)[1] not in {r["experiment"] for r in new_rows}:
+            del curves[key]
+
+    write_outputs(all_rows, curves)
+    print(f"\n已写出 {OUT/'results.csv'} / results.md / loss_curve.png / curves.json", flush=True)
     return 0
 
 

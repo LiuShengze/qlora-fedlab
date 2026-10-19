@@ -111,6 +111,7 @@ def main() -> int:
     parser.add_argument("--epochs", type=float, default=1.0)
     parser.add_argument("--out", default="qlora-demo-adapter")
     parser.add_argument("--question", default="用一句话解释什么是 QLoRA")
+    parser.add_argument("--no-eval", action="store_true", help="只训练并保存 adapter，跳过前后对比推理")
     args = parser.parse_args()
 
     print(f"GPU: {torch.cuda.get_device_name(0)}")
@@ -178,6 +179,10 @@ def main() -> int:
     # ---------------- 5. 前后对比推理 ----------------
     del model, trainer
     torch.cuda.empty_cache()
+
+    if args.no_eval:
+        print("\n（--no-eval：跳过前后对比推理，适配器已保存）")
+        return 0
 
     print("\n===== 微调前（底座，bf16）=====")
     base = load_model(args.model, quantized=False)
