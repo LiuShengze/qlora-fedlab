@@ -1,4 +1,4 @@
-﻿# QLoRA on a 12 GB Consumer GPU — Reproduction & Controlled Experiments
+# QLoRA on a 12 GB Consumer GPU — Reproduction & Controlled Experiments
 
 在单张 **RTX 5070（12 GB, Blackwell sm_120）** 上复现 QLoRA 微调，并完成四组受控对照实验。
 这是「联邦 LoRA + 差分隐私」方向的第 0 步：先证明本地微调链路可复现、可度量，再把它包进联邦框架。
@@ -192,7 +192,8 @@ Q12/Q14/Q15 则退化成整片 `###`。
 
 ### 断言 1：微调改变的是「表达」，不是「知识」
 
-`analysis.py` 从 60 条评测输出里自动统计（无需人工判断）：
+`analysis.py` 从 60 条评测输出里自动统计（无需人工判断），完整表见
+[results/analysis.md](results/analysis.md)：
 
 | 条件 | 平均长度 | 格式合规率 | 复读率 |
 |---|---|---|---|
@@ -234,6 +235,23 @@ Q12/Q14/Q15 则退化成整片 `###`。
 | 微调改行为不改知识（60 条评测证据） | 大规模下 LoRA 与全量微调的收敛差距 |
 | "接近全量微调"的方向（差 0.16 loss） | 推理延迟的定量对比（4-bit vs bf16） |
 
+### 附：领域数据试跑（负结果，如实记录）
+
+仓库里的 `data/lab_qa.jsonl` 是我们从组内 6 篇论文（FedShieldLLM、FedHLoRA、CITE、FKL、
+FedFMSL、MuPFL）整理的 60 条问答，被用来做了一次"注入领域知识"的尝试：
+
+| 设置 | 结果 |
+|---|---|
+| 0.6B + 60 条 × 3 epoch（23 步） | loss **4.0059**，峰值显存 1.15 GB |
+| 训练后问「FedAvg 和 FedProx 的区别」 | 仍然答错，且出现循环表述 |
+
+结论：**60 条、23 步、0.6B 这个组合不足以注入知识**。三个原因缺一不可——
+数据太少（每个知识点只出现一次）、步数太少（loss 还没降下来）、模型容量不足（术语是它没见过的 token 组合）。
+
+这条负结果本身是有价值的：它说明"喂一点数据就期待模型学会"是不成立的，
+也解释了为什么本仓库把领域数据作为**下一步**而不是当前结论。要往下走需要：
+扩到 150–200 条、训 10–15 epoch、并在 4B 上做（容量更够）。
+
 ---
 
 ## 学习脚本（learn/）
@@ -265,8 +283,13 @@ Q12/Q14/Q15 则退化成整片 `###`。
 ├── requirements.txt
 ├── setup_qlora.ps1      Windows 一键环境（可选）
 ├── learn/               学习脚本：tokenizer / next-token / fp16 vs 4-bit
+├── data/
+│   ├── lab_qa.jsonl     组内 6 篇论文的 60 条问答（改写，非原文）
+│   ├── build_lab_qa.py  生成脚本
+│   ├── validate_qa.py   数据校验（字段/长度/重复/乱码）
+│   └── papers/          论文提取出的纯文本（含原文，已在 .gitignore 外，不入库）
 ├── results/             results.csv / results.md / loss_curve.png / curves.json
-│                        eval.csv / eval.md
+│                        eval.csv / eval.md / analysis.md
 └── docs/
     ├── ENVIRONMENT.md        环境搭建全记录（含镜像与踩坑）
     └── download_model.ps1    国内下载大模型（ModelScope 优先 + 断点续传）
