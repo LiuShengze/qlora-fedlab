@@ -23,3 +23,5 @@ data/raw/
 .idea/
 .DS_Store
 Thumbs.db
+
+data/papers/

@@ -18,12 +18,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 from pathlib import Path
 
 import torch
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import SFTConfig, SFTTrainer
@@ -66,8 +67,26 @@ def load_model(model_id: str, quantized: bool):
         return AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.bfloat16, **kwargs)
 
 
-def build_dataset(limit: int):
-    """玩具数据：alpaca-cleaned 前 N 条，拼成和指南一致的模板。"""
+def build_dataset(limit: int, data_path: str | None = None):
+    """数据来源：给了 --data 就用本地 jsonl，否则用 alpaca-cleaned 前 N 条。"""
+    if data_path:
+        rows = [
+            json.loads(line)
+            for line in Path(data_path).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        rows = rows[:limit]
+        return Dataset.from_list([
+            {
+                "text": PROMPT_TEMPLATE.format(
+                    instruction=str(r["instruction"]).strip(),
+                    input=str(r.get("input", "") or "").strip(),
+                    output=str(r["output"]).strip(),
+                )
+            }
+            for r in rows
+        ])
+
     raw = load_dataset("yahma/alpaca-cleaned", split=f"train[:{limit}]")
     return raw.map(
         lambda ex: {
@@ -112,6 +131,7 @@ def main() -> int:
     parser.add_argument("--out", default="qlora-demo-adapter")
     parser.add_argument("--question", default="用一句话解释什么是 QLoRA")
     parser.add_argument("--no-eval", action="store_true", help="只训练并保存 adapter，跳过前后对比推理")
+    parser.add_argument("--data", default=None, help="本地问答 jsonl（instruction/input/output），不传则用 alpaca")
     args = parser.parse_args()
 
     print(f"GPU: {torch.cuda.get_device_name(0)}")
@@ -138,7 +158,7 @@ def main() -> int:
     model.print_trainable_parameters()  # 这就是「为什么联邦微调必须用 LoRA」的那个百分比
 
     # ---------------- 3. 数据 ----------------
-    dataset = build_dataset(args.samples)
+    dataset = build_dataset(args.samples, args.data)
     print(f"样例（截断 300 字）：\n{dataset[0]['text'][:300]}\n---")
 
     # ---------------- 4. 训练 ----------------
