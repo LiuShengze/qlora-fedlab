@@ -1,8 +1,10 @@
-# QLoRA on a 12 GB Consumer GPU — Reproduction & Controlled Experiments
+﻿# QLoRA on a 12 GB Consumer GPU — Reproduction & Controlled Experiments
 
 在单张 **RTX 5070（12 GB, Blackwell sm_120）** 上复现 QLoRA 微调，并完成四组受控对照实验。
 这是「联邦 LoRA + 差分隐私」方向的第 0 步：先证明本地微调链路可复现、可度量，再把它包进联邦框架。
 
+> **完整实验报告：[REPORT.md](REPORT.md)**（摘要 / 方法 / 结果 / 局限，2–3 页）
+>
 > **TL;DR** — 4-bit NF4 QLoRA on Qwen3-0.6B: 500 alpaca samples, 1 epoch in **~1 min**, peak VRAM **2.0 GB**,
 > only **0.76%** of parameters trainable. Learning rate is the most sensitive knob (final loss 2.00 → 1.59 across lr 2e-5 → 1e-3).
 
@@ -274,6 +276,7 @@ FedFMSL、MuPFL）整理的 60 条问答，被用来做了一次"注入领域知
 
 ```
 .
+├── REPORT.md            实验报告（摘要/方法/结果/局限）
 ├── demo_qlora.py        单次 QLoRA 微调 + 微调前后对比推理
 ├── experiments.py       四组受控实验（支持 --model 跑多规模），自动出表格与曲线
 ├── eval.py              15 题 × 4 条件的 held-out 生成评测
