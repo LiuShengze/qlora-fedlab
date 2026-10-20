@@ -1,4 +1,4 @@
-"""从 results/eval.csv 里量化"微调到底改变了什么"。
+﻿"""从 results/eval.csv 里量化"微调到底改变了什么"。
 
 三个指标（都不需要人工判断，纯文本统计）：
   1. 格式合规率：答案里不出现模板标记（### / Response:）的比例，越高越好
@@ -22,8 +22,24 @@ OUT_MD = ROOT / "results" / "analysis.md"
 TEMPLATE_MARKS = ("###", "Response:", "Instruction:", "Input:")
 
 
+def is_format_clean(answer: str) -> bool:
+    """格式合规：答案里没有回显 prompt 模板的痕迹，且不是空回答。
+
+    注意"不是空回答"这条是必需的——否则一个什么都不说的模型会拿满分。
+    """
+    text = answer.strip()
+    if not text:
+        return False
+    return not any(mark in text for mark in TEMPLATE_MARKS)
+
+
 def repeat_ratio(text: str, n: int = 4) -> float:
-    """重复 n-gram 占比：0 表示没有复读，接近 1 表示整段在重复。"""
+    """重复 n-gram 占比：0 表示没有复读，接近 1 表示整段在重复。
+
+    按"字符"切 n-gram（中文没有空格，按字最稳）。分母是全部 n-gram 数，
+    分子是"出现次数 >1 的那些 n-gram 的总出现次数"，所以一段完全重复的话会趋近 1。
+    长度不足 2n 时返回 0（样本太短，无法判断）。
+    """
     tokens = list(text)
     if len(tokens) < n * 2:
         return 0.0
@@ -53,7 +69,7 @@ def main() -> int:
         answers = [item["answer"].strip() for item in items]
         n = len(answers)
         avg_len = sum(len(a) for a in answers) / n
-        clean = sum(1 for a in answers if not any(m in a for m in TEMPLATE_MARKS))
+        clean = sum(1 for a in answers if is_format_clean(a))
         repeat = sum(repeat_ratio(a) for a in answers) / n
         empty = sum(1 for a in answers if not a)
         lines.append(
