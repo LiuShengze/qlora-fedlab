@@ -1,27 +1,31 @@
-# 虚拟环境与巨型产物
+﻿# 虚拟环境与巨型产物
 .venv/
 venv/
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+torchinductor_*/
 
 # 训练产物
 qlora-demo-output/
 qlora-demo-adapter/
 qlora-*-adapter/
+full-ft-output/
 results/_run/
 *.bin
 
-# 模型与数据缓存（体积太大，不入库）
-hf-cache/
+# 模型与数据缓存（体积太大，不入库；都放在本文件夹内）
 models/
+hf-cache/
 data/raw/
+data/papers/
 *.safetensors
+
+# 个人计划（不入库）
+docs/PLAN.md
 
 # 编辑器 / 系统
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-
-data/papers/

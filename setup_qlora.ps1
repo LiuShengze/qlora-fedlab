@@ -18,7 +18,7 @@
 [CmdletBinding()]
 param(
     [string]$PythonVersion = "3.12",
-    [string]$HfHome = "D:\MyDeepSeekHarness\hf-cache",
+    [string]$HfHome = "D:\MyDeepSeekHarness\qlora-demo\hf-cache",
     [string]$TorchIndex = "https://mirror.nju.edu.cn/pytorch/whl/cu130",
     [string]$PypiIndex = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 )

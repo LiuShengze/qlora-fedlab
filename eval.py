@@ -1,4 +1,4 @@
-"""Held-out 评测：15 道题 × 4 个条件，同一 prompt 模板、greedy 解码。
+﻿"""Held-out 评测：15 道题 × 4 个条件，同一 prompt 模板、greedy 解码。
 
 4 个条件：
     A 0.6B-base   底座，不挂 adapter
@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "results"
 OUT.mkdir(exist_ok=True)
 
-MODELS_DIR = Path(r"D:\MyDeepSeekHarness\models")
+MODELS_DIR = ROOT / "models"          # 仓库内；由 scripts 或手动放置
 
 QUESTIONS = [
     ("Q01", "通用", "QQ 和微信的区别是什么？"),

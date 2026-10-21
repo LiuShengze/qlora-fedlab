@@ -1,4 +1,4 @@
-﻿# QLoRA on a 12 GB Consumer GPU — Reproduction & Controlled Experiments
+# QLoRA on a 12 GB Consumer GPU — Reproduction & Controlled Experiments
 
 在单张 **RTX 5070（12 GB, Blackwell sm_120）** 上复现 QLoRA 微调，并完成四组受控对照实验。
 这是「联邦 LoRA + 差分隐私」方向的第 0 步：先证明本地微调链路可复现、可度量，再把它包进联邦框架。
@@ -286,17 +286,28 @@ FedFMSL、MuPFL）整理的 60 条问答，被用来做了一次"注入领域知
 ├── requirements.txt
 ├── setup_qlora.ps1      Windows 一键环境（可选）
 ├── learn/               学习脚本：tokenizer / next-token / fp16 vs 4-bit
+├── tests/               指标实现的单元测试
 ├── data/
 │   ├── lab_qa.jsonl     组内 6 篇论文的 60 条问答（改写，非原文）
 │   ├── build_lab_qa.py  生成脚本
 │   ├── validate_qa.py   数据校验（字段/长度/重复/乱码）
-│   └── papers/          论文提取出的纯文本（含原文，已在 .gitignore 外，不入库）
+│   └── papers/          论文提取出的纯文本（含原文，不入库）
 ├── results/             results.csv / results.md / loss_curve.png / curves.json
-│                        eval.csv / eval.md / analysis.md
-└── docs/
-    ├── ENVIRONMENT.md        环境搭建全记录（含镜像与踩坑）
-    └── download_model.ps1    国内下载大模型（ModelScope 优先 + 断点续传）
+│                        eval.csv / eval.md / analysis.md / spotcheck*.md
+├── docs/
+│   ├── ENVIRONMENT.md        环境搭建全记录（含镜像与踩坑）
+│   ├── PLAN.md               个人计划（不入库）
+│   └── download_model.ps1    国内下载大模型（ModelScope 优先 + 断点续传）
+│
+├── models/              【本地】Qwen3-0.6B / Qwen3-4B-Instruct-2507（gitignore）
+├── hf-cache/            【本地】HuggingFace 缓存（gitignore）
+├── qlora-demo-adapter/  【本地】0.6B 的 LoRA 权重 8.8 MB（gitignore）
+├── qlora-4b-adapter/    【本地】4B 的 LoRA 权重 22.5 MB（gitignore）
+└── .venv/               【本地】Python 3.12 虚拟环境（gitignore）
 ```
+
+> 体积大的东西（模型 8.9 GB、缓存 1.8 GB、venv、adapter）全部放在**本文件夹内**并被 `.gitignore` 排除，
+> 不会进仓库；需要时用 `docs/download_model.ps1` 重新下载即可。
 
 ---
 
